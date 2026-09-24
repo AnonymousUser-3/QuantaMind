@@ -1,470 +1,200 @@
-# QuantumChem-200K: A Large-Scale Open Organic Molecular Dataset for Quantum-Chemistry Property Screening and Language Model Benchmarking
+# QuantaMind: A Large Chemistry Language Model for Organic Molecular Screening and Discovery
 
-We introduce QuantumChem-200K, a large-scale dataset of over 200,000 organic molecules annotated with seven quantum-chemical properties, including two-photon absorption (TPA) cross sections, TPA spectral ranges, singlet–triplet intersystem crossing (ISC) energies, toxicity and synthetic accessibility scores, solubility, and boiling point. These values are computed using a hybrid workflow that integrates density function theory (DFT), semi-empirical excited-state methods, atomistic quantum solvers, and neural-network predictors.
-Data is available at: https://huggingface.co/datasets/QuantumChem/QuantumChem_200k, and paper is under review.
+QuantaMind is a 32-billion-parameter chemistry language model for structured molecular-property prediction and multi-objective organic molecular screening. It maps a chemistry instruction and a SMILES string to a parseable molecular-property profile. The model is obtained by parameter-efficient instruction tuning of Qwen-2.5-32B on QuantumChem-200K, a supervision corpus containing more than 214,000 organic molecules with photophysical, quantum-chemical, safety, accessibility, and physicochemical annotations.
 
-# Dataset composition:
-<img width="658" height="230" alt="302ddf4f-5268-42f3-b504-65543633cdbc" src="https://github.com/user-attachments/assets/6b459694-6491-42ad-9457-f549e1ee091d" />
-<img width="483" height="144" alt="fdbe4b5e-8b89-45c5-b0cb-00caea4d5c22" src="https://github.com/user-attachments/assets/8c86162b-9885-41de-86e4-a8f50d1dc488" />
+The work is currently under review at ICLR 2027. QuantaMind is intended as a high-throughput prioritization layer for molecular screening, with photoinitiator discovery as a demanding case study. Shortlisted candidates still require independent quantum-chemical and experimental validation.
 
-# Data curation process:
-<img width="900" height="700" alt="Screenshot 2025-11-30 at 18 25 57" src="https://github.com/user-attachments/assets/7264ac7e-b3bf-4b61-a51e-7ee792d0e64d" />
+**Resources:** [training corpus](https://huggingface.co/datasets/QuantumChem/QuantumChem-200k-new) | [3,000-molecule testbank](https://huggingface.co/datasets/QuantumChem/QuantumChem_Testbank_3000) | [project website](https://ravenllm.com/)
 
-# LLM-Based Monomer Property Prediction
+![Overview of the QuantaMind chemistry language model and screening workflow](figs/quantamind_overview.png)
 
-This repository contains scripts and notebooks for fine-tuning and evaluating large language models for **SMILES-to-monomer property prediction**. Given a molecular SMILES string, the model predicts relevant photochemical, physical, and synthetic properties such as:
+## Highlights
 
-- sigma at 780 nm
-- maximum sigma
-- ISC energy
-- toxicity score
-- synthetic accessibility score
-- boiling point
-- solubility
+| Item | Value |
+|---|---|
+| Backbone | Qwen-2.5-32B decoder-only language model |
+| Adaptation | LoRA adapters with a quantized backbone |
+| Supervision | More than 210K instruction-SMILES-response examples |
+| Primary benchmark | Seven molecular screening properties |
+| External evaluation | 3,000 unseen molecules from VQM24 and ZINC20 |
+| Overall wMAE | **0.1980** (base Qwen-2.5-32B: 3.3040) |
+| Top-100 recovery | **35 / 100** ground-truth candidates |
+| Enrichment@100 | **10.50x** |
+| Normalized hypervolume regret@20 | **3.26%** |
+| Selected schedule | Six epochs; learning rate 2 x 10<sup>-4</sup> |
+| Training compute | Four A100 80 GB GPUs; approximately 4-5 days |
 
-The main workflow includes:
+## Model task
 
-1. Fine-tuning a Qwen2.5-32B model with LoRA using Unsloth.
-2. Running batch inference on SMILES strings.
-3. Comparing model predictions against ground-truth property tables using weighted MAE, RMSE, Pearson r. 
-4. Running Claude Haiku, Deepseek, Gemma, Llama, Phi, Mistral, GPT 5.2, and graph learning model baselines for comparison, using wMAE, precision, recall, Pareto precision, and hypervolume regret.
+Given an instruction `q` and a molecular SMILES string `x`, QuantaMind generates an ordered, fixed-schema response containing a molecular-property profile. The primary benchmark evaluates seven nontrivial targets:
 
----
+| Group | Property | Unit / interpretation | Screening direction |
+|---|---|---|---|
+| Photophysical | TPA cross section at 780 nm, `sigma_780` | GM | Higher |
+| Photophysical | Maximum TPA cross section, `sigma_max` | GM | Higher |
+| Excited state | Singlet-triplet ISC energy gap | eV | Lower |
+| Practical | Toxicity score | Surrogate score | Lower |
+| Practical | Synthetic accessibility score | Surrogate score | Higher |
+| Physicochemical | Boiling point | Degrees Celsius | Objective-dependent |
+| Physicochemical | Solubility | Dataset-reported scale | Objective-dependent |
 
-## Repository Structure
+Molecular weight, aromaticity, and logP are retained in the training response schema and auxiliary analyses but are excluded from the primary seven-property benchmark because they are comparatively direct to infer from SMILES.
+
+Example input:
+
+```text
+Instruction: Predict the photophysical and practical properties of this molecule.
+SMILES: C=C(C)OC
+```
+
+The generated response follows a fixed property order with explicit units so that the same field-wise parser can be used for regression metrics and downstream candidate ranking.
+
+## Chemistry supervision
+
+QuantumChem-200K uses QM9 and the Open Macromolecular Genome as molecular-structure pools. After validity checks, canonicalization, deduplication, and compatibility filtering, the structures are annotated through a hybrid workflow:
+
+- Two-photon absorption: MLatom-based spectral calculations over 600-850 nm.
+- Intersystem crossing: DFT and AIQM1/MNDO-CIS calculations.
+- Toxicity and synthetic accessibility: eToxPred-derived scores.
+- Boiling point and solubility: JRgui/RDKit-centered property workflows.
+- Quality control: successful parsing, finite values, consistent units, fixed schemas, and train-test separation.
+
+The external testbank contains 1,000 VQM24 and 2,000 ZINC20 molecules and is held out from model adaptation.
+
+![Construction of the QuantumChem-200K supervision corpus](figs/quantamind_supervision_pipeline.png)
+
+## Evaluation
+
+Every language model receives the same fixed-schema prompt and numerical parser. API-only systems are evaluated zero-shot at temperature 0.2; QuantaMind, the same-protocol Gemma control, the base Qwen backbone, and graph neural networks provide the controlled comparisons.
+
+### Molecular-property prediction
+
+On the 3,000-molecule external testbank, QuantaMind achieves an overall wMAE of **0.1980**. Domain adaptation reduces the Qwen-2.5-32B backbone's wMAE from 3.3040, while Gemma-3-27B improves from 3.1480 to 0.5297 under the same fine-tuning protocol. The best reported GNN comparator, EdgeCNN, reaches 0.5717 overall wMAE.
+
+| Model | Overall wMAE (lower is better) |
+|---|---:|
+| Base Qwen-2.5-32B | 3.3040 |
+| Base Gemma-3-27B | 3.1480 |
+| EdgeCNN | 0.5717 |
+| Fine-tuned Gemma-3-27B | 0.5297 |
+| **QuantaMind** | **0.1980** |
+
+QuantaMind's property-level wMAE is 0.0106 for `sigma_780`, 0.0104 for `sigma_max`, 0.0273 for ISC, 0.0446 for toxicity, 0.0227 for synthetic accessibility, 0.0074 for boiling point, and 0.0057 for solubility.
+
+![Property-level wMAE comparison on the external testbank](figs/wmae_contribution_7models_rank_log.png)
+
+### Multi-objective screening
+
+The seven-property screening benchmark evaluates top-k recovery, enrichment, epsilon-Pareto precision, and normalized hypervolume regret. QuantaMind recovers 35 of the ground-truth top 100 candidates and substantially improves hypervolume regret relative to the same-protocol Gemma control.
+
+| Model | Precision@100 | Recall@100 | Enrichment@100 | Epsilon-Pareto precision@20 | Normalized HV regret@20 |
+|---|---:|---:|---:|---:|---:|
+| Fine-tuned Gemma-3-27B | 0.31 | 0.31 | 9.30 | **0.85** | 42.4% |
+| **QuantaMind** | **0.35** | **0.35** | **10.50** | 0.80 | **3.26%** |
+
+The figure below illustrates sequential filtering and Pareto ranking on 63 held-out examples with complete predictions. "Reference-validated" means comparison with computational benchmark labels, not wet-lab validation.
+
+![Sequential multi-objective screening with QuantaMind](figs/quantamind_sequential_screening.png)
+
+## Repository layout
 
 ```text
 .
-├── fine_tuning.py              # LoRA fine-tuning script using Unsloth + Qwen2.5-32B
-├── infer.ipynb                 # Batch inference notebook using a fine-tuned LoRA adapter
-├── claude_infer.py             # Claude baseline inference script
-├── wmae_eval_sqrt.ipynb        # Weighted MAE evaluation notebook with sqrt rebalancing
-├── requirements.txt            # Python dependencies
-├── 100testbank.csv            # Input SMILES file for batch inference
-├── 3000testbank.csv             # Ground-truth test set for evaluation
-├── 100prediction.csv           # Prediction CSV for evaluation
-└── outputs/                    # Training checkpoints and model outputs
-└── Quantumchemistry simulation code/     # code to run quantum-chemical simulations
+|-- fine tune code/
+|   `-- fine_tuning.py                  # Qwen-2.5-32B LoRA training
+|-- infer and benchmark code/
+|   |-- fine-tuned-infer.ipynb          # Fine-tuned model inference
+|   |-- gemma_finetuned_infer.py        # Same-protocol Gemma control
+|   |-- claude_infer.py                 # Claude zero-shot baseline
+|   |-- infer_deepseek_api.py           # DeepSeek zero-shot baseline
+|   |-- testing_infer.ipynb             # Additional inference experiments
+|   `-- wmae_eval_sqrt.ipynb            # wMAE evaluation
+|-- infer and benchmark data/           # Evaluation inputs and predictions
+|-- Quantumchemistry_simulation_code/   # Quantum-chemistry workflow examples
+|-- figs/                               # README and evaluation figures
+|-- requirements.txt
+`-- LICENSE
 ```
 
----
+## Installation
 
-## Setup
-
-**Requirements:** Python 3.10 or newer is recommended. A CUDA-capable NVIDIA GPU is strongly recommended because the training and inference scripts load Qwen2.5-32B in 4-bit mode and move tensors to CUDA.
-
-### 1. Create and activate a virtual environment
+Python 3.10 or 3.11 and a CUDA-capable NVIDIA GPU are recommended. The 32B backbone is loaded in 4-bit mode, but substantial GPU memory is still required.
 
 ```bash
-cd /path/to/your/repo
+git clone https://github.com/AnonymousUser-3/QuantaMind.git
+cd QuantaMind
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-### 2. Install Python dependencies
+Install the PyTorch build appropriate for the local CUDA runtime if the default wheel is unsuitable.
+
+## Training and inference
+
+The released scripts are research artifacts rather than a turnkey training package. Before running them, configure dataset, checkpoint, adapter, and input/output paths for your environment.
+
+### Train QuantaMind adapters
 
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+python "fine tune code/fine_tuning.py"
 ```
 
-A minimal `requirements.txt` may include:
+For a fresh run, remove or replace the script's `resume_from_checkpoint` setting. The ICLR manuscript uses the current [QuantumChem-200K training corpus](https://huggingface.co/datasets/QuantumChem/QuantumChem-200k-new), six training epochs, and a selected learning rate of `2e-4`.
 
-```text
-torch
-transformers
-datasets
-trl
-peft
-accelerate
-bitsandbytes
-unsloth
-pandas
-numpy
-matplotlib
-ipython
-jupyter
-anthropic
+### Run inference
+
+```bash
+jupyter lab "infer and benchmark code/fine-tuned-infer.ipynb"
 ```
 
-For GPU-accelerated PyTorch, install the CUDA build that matches your system from the official PyTorch installation page:
+Set the local adapter identifier and testbank path before batch inference. The trained adapter checkpoint is not bundled with this repository.
 
-```text
-https://pytorch.org/get-started/locally/
+### Evaluate predictions
+
+```bash
+jupyter lab "infer and benchmark code/wmae_eval_sqrt.ipynb"
 ```
 
----
+Point the notebook to a ground-truth CSV and a prediction CSV with matching molecule rows and property columns.
 
-## Environment Variables
+## Credentials and large artifacts
 
-Before running inference or uploading models, set your API tokens as environment variables.
+Use environment variables for external-service credentials. Never commit API keys or access tokens.
 
 ```bash
 export HF_TOKEN="your_huggingface_token"
 export ANTHROPIC_API_KEY="your_anthropic_api_key"
 ```
 
-Do **not** hard-code tokens in notebooks or scripts before pushing to GitHub.
+Model checkpoints, adapters, logs, generated outputs, and local environment files should remain outside Git history unless intentionally released through an appropriate artifact store.
 
-In `infer.ipynb`, replace any hard-coded Hugging Face token with:
+## Limitations and intended use
 
-```python
-import os
-HF_TOKEN = os.getenv("HF_TOKEN")
-```
+- QuantaMind is a screening model, not a replacement for electronic-structure calculations or experiments.
+- Predictions inherit the biases and uncertainty of the computed and model-derived supervision labels.
+- SMILES does not explicitly encode three-dimensional conformation, solvent, concentration, formulation, irradiation conditions, or competing relaxation pathways.
+- Coverage is limited for heavy elements, unfamiliar scaffolds, kinetics, polymerization dynamics, and fabrication outcomes.
+- Toxicity and synthetic-accessibility outputs are surrogate screening scores, not safety determinations.
+- Pareto sets and scalar rankings depend on the user's objectives and weights.
 
-In `claude_infer.py`, replace:
-
-```python
-api_key=os.getenv("your api key")
-```
-
-with:
-
-```python
-api_key=os.getenv("ANTHROPIC_API_KEY")
-```
-
----
-
-## 1. Fine-Tuning the Model
-
-The main training script is:
-
-```bash
-python fine_tuning.py
-```
-
-This script fine-tunes:
-
-```text
-Base model: unsloth/Qwen2.5-32B
-Dataset: YinqiZeng704/200k_monomer_properties
-Method: LoRA fine-tuning
-Quantization: 4-bit
-Output directory: outputs/
-```
-
-The training data are formatted using an Alpaca-style prompt:
-
-```text
-Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
-
-### Instruction:
-Based on the given SMILES string, predict the monomer's relevant properties.
-
-### Input:
-<SMILES>
-
-### Response:
-<property prediction>
-```
-
-### Important checkpoint note
-
-The current script resumes training from a hard-coded checkpoint path:
-
-```python
-trainer.train(resume_from_checkpoint="/mnt/shared/gpfs/home/renjie2/fine_tune/forward/outputs/checkpoint-3000")
-```
-
-For a fresh training run, change this to:
-
-```python
-trainer.train()
-```
-
-Or replace the checkpoint path with your own local checkpoint path.
-
-### Training outputs
-
-The fine-tuning script produces:
-
-```text
-outputs/              # model checkpoints
-training_log.csv      # exported training log
-```
-
-The script can also push the trained adapter and tokenizer to Hugging Face:
-
-```python
-model.push_to_hub("YinqiZeng704/200k_model", token="your token")
-tokenizer.push_to_hub("YinqiZeng704/200k_model", token="your token")
-```
-
-Before public release, replace the token with `HF_TOKEN` from the environment.
-
----
-
-## 2. Running Inference with the Fine-Tuned Model
-
-Open the inference notebook:
-
-```bash
-jupyter notebook infer.ipynb
-```
-
-or:
-
-```bash
-jupyter lab infer.ipynb
-```
-
-The notebook loads:
-
-```text
-Base model: unsloth/Qwen2.5-32B
-LoRA adapter: YinqiZeng704/200k_model_v2
-```
-
-It runs a single test prediction and then performs batch inference on:
-
-```text
-3000bestbank.csv
-```
-
-The CSV should contain a column named:
-
-```text
-SMILES
-```
-
-Example:
-
-```csv
-SMILES
-CC12NC1C1C(C#N)C21
-C=C(C)OC
-NC(=O)C1=CCCCC1
-```
-
-The notebook writes batch outputs to:
-
-```text
-3000outputs.txt
-```
-
----
-
-## 3. Running Baseline Inference
-
-E.g., the Claude baseline script is:
-
-```bash
-python claude_infer.py
-```
-
-This script performs:
-
-1. A single test prediction for one SMILES string.
-2. Batch inference over the first 3000 SMILES strings in `3000.csv`.
-3. Output saving to `3000outputs_claude_haiku.txt`.
-
-Expected input:
-
-```text
-3000testbank.csv
-```
-
-Required column:
-
-```text
-SMILES
-```
-
-Output file:
-
-```text
-3000outputs_claude_haiku.txt
-```
-
-The script currently uses:
-
-```text
-model = claude-haiku-4.5
-temperature = 0.2
-max_tokens = 256
-```
-
----
-
-## 4. Evaluating Predictions with Weighted MAE
-
-Open the evaluation notebook:
-
-```bash
-jupyter notebook wmae_eval_sqrt.ipynb
-```
-
-or:
-
-```bash
-jupyter lab wmae_eval_sqrt.ipynb
-```
-
-The notebook compares a ground-truth CSV and a prediction CSV:
-
-```python
-truth_path = "100testbank.csv"
-pred_path  = "100prediction.csv"
-```
-
-It excludes:
-
-```python
-exclude = {"wavelength_range"}
-```
-
-The notebook computes weighted mean absolute error using square-root rebalancing:
-
-```math
-w_i =
-\left(\frac{1}{r_i}\right)
-\left(
-\frac{K\sqrt{1/n_i}}
-{\sum_{j=1}^{K}\sqrt{1/n_j}}
-\right)
-```
-
-```math
-\mathrm{wMAE}
-=
-\frac{1}{|M|}
-\sum_{i=1}^{K}
-w_i
-\sum_{m \in \mathrm{valid}_i}
-|y_i(m)-\hat{y}_i(m)|
-```
-
-Where:
-
-- `K` is the number of evaluated properties.
-- `M` is the number of evaluated molecules.
-- `n_i` is the number of valid samples for property `i`.
-- `r_i` is the numeric range used for property normalization.
-- `y_i` is the ground-truth value.
-- `ŷ_i` is the predicted value.
-
-Evaluation outputs:
-
-```text
-wmae_details_sqrt.csv
-wmae_contribution.png
-wmae_contribution.pdf
-```
-
----
-
-## Recommended Workflow
-
-### Step 1: Fine-tune the model
-
-```bash
-python fine_tuning.py
-```
-
-### Step 2: Run model inference
-
-```bash
-jupyter notebook infer.ipynb
-```
-
-### Step 3: Run Claude baseline inference
-
-```bash
-python claude_infer.py
-```
-
-### Step 4: Evaluate predictions
-
-```bash
-jupyter notebook wmae_eval_sqrt.ipynb
-```
-
----
-
-## Notes on Large Files
-
-Model checkpoints, training outputs, prediction files, and logs can become large. These files should generally not be committed to GitHub.
-
-Recommended `.gitignore`:
-
-```text
-.venv/
-__pycache__/
-.ipynb_checkpoints/
-
-outputs/
-runs/
-checkpoints/
-*.pt
-*.pth
-*.bin
-*.safetensors
-
-training_log.csv
-3000outputs.txt
-3000outputs_claude_haiku.txt
-wmae_details_sqrt.csv
-wmae_contribution.png
-wmae_contribution.pdf
-
-.env
-```
-
----
-
-## Security Notes
-
-Before pushing this repository to GitHub:
-
-- Remove all hard-coded API tokens.
-- Remove private Hugging Face tokens from notebooks.
-- Replace local absolute paths with relative paths.
-- Do not commit model checkpoints unless intentionally releasing them.
-- Use environment variables for all private credentials.
-
----
-
-## Example Input and Output
-
-### Input
-
-```text
-SMILES: C=C(C)OC
-```
-
-### Expected model behavior
-
-```text
-The monomer compound has sigma of ... GM at 780 nm, maximum sigma of ... GM, ISC of ... eV, toxicity score of ..., SA score of ..., boiling point of ... °C, logP of ..., aromaticity of ..., solubility of ... ug/mol, molecular weight of ... g/mol.
-```
-
----
-
-# Fine-tuning and evaluation:
-Using QuantumChem-200K, we fine-tuned the open-source Qwen-2.5-32B LLM to create a chemistry AI assistant capable of forward polymer property prediction from SMILES. It demonstrates that domain-specific fine-tuning significantly improves prediction accuracy over baselines such as GPT-4o, Llama-3.1-70B, and the base Qwen2.5- 32B model. The evaluation metric used is the wMAE:
-
-<img width="400" height="190" alt="Screenshot 2025-11-30 at 18 31 14" src="https://github.com/user-attachments/assets/d774aa09-5ea5-45fc-8f6d-11975669b065" />
-
-# Benchmarking results:
-<img width="11626" height="4706" alt="wmae_contribution_8models_rank_log" src="https://github.com/user-attachments/assets/01b6f116-2159-4438-a28e-d8ca47bb3451" />
-
-<img width="5952" height="8418" alt="Radar_new" src="https://github.com/user-attachments/assets/ad94f91d-cb19-4c31-9146-311540a5bb54" />
+Use domain-expert oversight, appropriate chemical-safety controls, and independent validation before acting on any shortlist.
 
 ## Citation
 
-If you use this repository in academic work, please cite the associated project or manuscript.
+If you use this repository, QuantumChem-200K, or the QuantaMind evaluation protocol, please cite the ICLR 2027 submission:
 
 ```bibtex
-@misc{quantumchem2026,
-  title  = {QuantumChem-200K: A Large-Scale Organic Molecular Dataset for Quantum-Chemistry Property Screening and Language Model Benchmarking},
-  author = {},
-  year   = {2026},
-  note   = {under review},
-  url    = {}
+@article{quantamind2026,
+  title   = {QuantaMind: A Large Chemistry Language Model for Organic Molecular Screening and Discovery},
+  author  = {Anonymous Authors},
+  journal = {Under review at ICLR 2027},
+  year    = {2026},
+  url     = {https://github.com/AnonymousUser-3/QuantaMind}
 }
 ```
----
+
 ## License
-Data: GNU General Public License v3, code: MIT.
+
+The code in this repository is released under the [MIT License](LICENSE). Dataset reuse is governed by the dataset cards and the licenses or attribution requirements of the underlying source resources.
