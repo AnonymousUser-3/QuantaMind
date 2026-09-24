@@ -1,4 +1,4 @@
-# QuantaMind: A Large Chemistry Language Model for Organic Molecular Screening and Discovery
+# QUANTAMIND: A LARGE CHEMISTRY LANGUAGE MODEL FOR STRUCTURED MOLECULAR SCREENING AND DISCOVERY
 
 QuantaMind is a 32-billion-parameter chemistry language model for structured molecular-property prediction and multi-objective organic molecular screening. It maps a chemistry instruction and a SMILES string to a parseable molecular-property profile. The model is obtained by parameter-efficient instruction tuning of Qwen-2.5-32B on QuantumChem-200K, a supervision corpus containing more than 214,000 organic molecules with photophysical, quantum-chemical, safety, accessibility, and physicochemical annotations.
 
@@ -187,7 +187,7 @@ If you use this repository, QuantumChem-200K, or the QuantaMind evaluation proto
 
 ```bibtex
 @article{quantamind2026,
-  title   = {QuantaMind: A Large Chemistry Language Model for Organic Molecular Screening and Discovery},
+  title   = {QUANTAMIND: A LARGE CHEMISTRY LANGUAGE MODEL FOR STRUCTURED MOLECULAR SCREENING AND DISCOVERY},
   author  = {Anonymous Authors},
   journal = {Under review at ICLR 2027},
   year    = {2026},
