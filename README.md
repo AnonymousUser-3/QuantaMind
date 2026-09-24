@@ -4,7 +4,7 @@ QuantaMind is a 32-billion-parameter chemistry language model for structured mol
 
 The work is currently under review at ICLR 2027. QuantaMind is intended as a high-throughput prioritization layer for molecular screening, with photoinitiator discovery as a demanding case study. Shortlisted candidates still require independent quantum-chemical and experimental validation.
 
-**Resources:** [training corpus](https://huggingface.co/datasets/QuantumChem/QuantumChem-200k-new) | [3,000-molecule testbank](https://huggingface.co/datasets/QuantumChem/QuantumChem_Testbank_3000) | [project website](https://ravenllm.com/)
+**Resources:** [QuantaMind model](https://huggingface.co/QuantumChem/QuantaMind) | [training corpus](https://huggingface.co/datasets/QuantumChem/QuantumChem-200k-new) | [3,000-molecule testbank](https://huggingface.co/datasets/QuantumChem/QuantumChem_Testbank_3000) | [project website](https://ravenllm.com/)
 
 ![Overview of the QuantaMind chemistry language model and screening workflow](figs/quantamind_overview.png)
 
@@ -149,7 +149,7 @@ For a fresh run, remove or replace the script's `resume_from_checkpoint` setting
 jupyter lab "infer and benchmark code/fine-tuned-infer.ipynb"
 ```
 
-Set the local adapter identifier and testbank path before batch inference. The trained adapter checkpoint is not bundled with this repository.
+Set the adapter identifier to [`QuantumChem/QuantaMind`](https://huggingface.co/QuantumChem/QuantaMind), or to a downloaded local path, and configure the testbank path before batch inference. The model checkpoint is hosted on Hugging Face rather than bundled with this Git repository.
 
 ### Evaluate predictions
 
